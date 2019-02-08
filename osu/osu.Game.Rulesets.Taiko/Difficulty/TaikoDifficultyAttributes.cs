@@ -10,6 +10,7 @@ namespace osu.Game.Rulesets.Taiko.Difficulty
     {
         public double GreatHitWindow;
         public int MaxCombo;
+        public double WeightedObjects = 0;
 
         public TaikoDifficultyAttributes(Mod[] mods, double starRating)
             : base(mods, starRating)

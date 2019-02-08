@@ -46,15 +46,25 @@ namespace osu.Game.Rulesets.Taiko.Difficulty
             if (mods.Any(m => m is ModNoFail))
                 multiplier *= 0.90;
 
+            if (mods.Any(m => m is ModEasy))
+                multiplier *= 0.90;
+
+            if (mods.Any(m => m is ModFlashlight<TaikoHitObject>))
+                // Apply length bonus simply because it becomes a lot harder on longer maps.
+                multiplier *= Math.Min((1.02 * Math.Pow(Attributes.WeightedObjects / 15000.0, 1.5) + 1.05), 1.125);
+
             if (mods.Any(m => m is ModHidden))
                 multiplier *= 1.10;
+
+            if (mods.Any(m => m is ModHardRock))
+                multiplier *= 1.05;
 
             double strainValue = computeStrainValue();
             double accuracyValue = computeAccuracyValue();
             double totalValue =
                 Math.Pow(
-                    Math.Pow(strainValue, 1.1) +
-                    Math.Pow(accuracyValue, 1.1), 1.0 / 1.1
+                    Math.Pow(strainValue, 1.2) +
+                    Math.Pow(accuracyValue, 1.2), 1.0 / 1.2
                 ) * multiplier;
 
             if (categoryDifficulty != null)
@@ -68,41 +78,29 @@ namespace osu.Game.Rulesets.Taiko.Difficulty
 
         private double computeStrainValue()
         {
-            double strainValue = Math.Pow(5.0 * Math.Max(1.0, Attributes.StarRating / 0.0075) - 4.0, 2.0) / 100000.0;
+            double strainValue = Math.Pow(Attributes.StarRating, 1.85) * 6.5 + 0.1; //0.1 gives a small minimum
 
-            // Longer maps are worth more
-            double lengthBonus = 1 + 0.1f * Math.Min(1.0, totalHits / 1500.0);
-            strainValue *= lengthBonus;
+            strainValue *= Math.Min(1.25, Math.Pow(Attributes.WeightedObjects / 1000.0, 0.2));
 
-            // Penalize misses exponentially. This mainly fixes tag4 maps and the likes until a per-hitobject solution is available
-            strainValue *= Math.Pow(0.985, countMiss);
+            strainValue *= Math.Pow(Score.Accuracy, 2);
 
-            // Combo scaling
-            if (Attributes.MaxCombo > 0)
-                strainValue *= Math.Min(Math.Pow(Score.MaxCombo, 0.5) / Math.Pow(Attributes.MaxCombo, 0.5), 1.0);
-
-            if (mods.Any(m => m is ModHidden))
-                strainValue *= 1.025;
-
-            if (mods.Any(m => m is ModFlashlight<TaikoHitObject>))
-                // Apply length bonus again if flashlight is on simply because it becomes a lot harder on longer maps.
-                strainValue *= 1.05 * lengthBonus;
-
-            // Scale the speed value with accuracy _slightly_
-            return strainValue * Score.Accuracy;
+            return strainValue;
         }
 
         private double computeAccuracyValue()
         {
             if (Attributes.GreatHitWindow <= 0)
+            {
                 return 0;
+            }
 
-            // Lots of arbitrary values from testing.
-            // Considering to use derivation from perfect accuracy in a probabilistic manner - assume normal distribution
-            double accValue = Math.Pow(150.0 / Attributes.GreatHitWindow, 1.1) * Math.Pow(Score.Accuracy, 15) * 22.0;
+            // Values are based on experimentation.
+            double accValue = (300.0 / (Attributes.GreatHitWindow + 21.0)) * 2; // Value is based on hitwindow
+            accValue *= Math.Pow(Score.Accuracy, 14); // Scale with accuracy
+            accValue *= Math.Pow(Attributes.StarRating, 1.5); // Scale with difficulty, slightly exponentially
 
             // Bonus for many hitcircles - it's harder to keep good accuracy up for longer
-            return accValue * Math.Min(1.15, Math.Pow(totalHits / 1500.0, 0.3));
+            return accValue * Math.Min(1.15, Math.Pow(Attributes.WeightedObjects / 1000.0, 0.2));
         }
 
         private int totalHits => countGreat + countGood + countMeh + countMiss;

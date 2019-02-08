@@ -14,19 +14,22 @@ namespace osu.Game.Rulesets.Taiko.Difficulty
 {
     internal class TaikoDifficultyCalculator : DifficultyCalculator
     {
-        private const double star_scaling_factor = 0.04125;
+        private const double star_scaling_factor = 0.105;
 
         /// <summary>
         /// In milliseconds. For difficulty calculation we will only look at the highest strain value in each time interval of size STRAIN_STEP.
         /// This is to eliminate higher influence of stream over aim by simply having more HitObjects with high strain.
         /// The higher this value, the less strains there will be, indirectly giving long beatmaps an advantage.
         /// </summary>
-        private const double strain_step = 400;
+        private const double strain_step = 200;
 
         /// <summary>
         /// The weighting of each strain value decays to this number * it's previous value
         /// </summary>
-        private const double decay_weight = 0.9;
+        private const double decay_weight = 0.91;
+
+
+        private const double weighted_object_decay_scale = 2;
 
         public TaikoDifficultyCalculator(Ruleset ruleset, WorkingBeatmap beatmap)
             : base(ruleset, beatmap)
@@ -47,15 +50,17 @@ namespace osu.Game.Rulesets.Taiko.Difficulty
             difficultyHitObjects.Sort((a, b) => a.BaseHitObject.StartTime.CompareTo(b.BaseHitObject.StartTime));
 
             if (!calculateStrainValues(difficultyHitObjects, timeRate))
-                return new TaikoDifficultyAttributes(mods, 0);
+                return new DifficultyAttributes(mods, 0);
 
-            double starRating = calculateDifficulty(difficultyHitObjects, timeRate) * star_scaling_factor;
+            double weightedObjectCount = 0;
+            double starRating = calculateDifficulty(difficultyHitObjects, timeRate, out weightedObjectCount) * star_scaling_factor;
 
             return new TaikoDifficultyAttributes(mods, starRating)
             {
                 // Todo: This int cast is temporary to achieve 1:1 results with osu!stable, and should be remoevd in the future
                 GreatHitWindow = (int)(beatmap.HitObjects.First().HitWindows.Great / 2) / timeRate,
-                MaxCombo = beatmap.HitObjects.Count(h => h is Hit)
+                MaxCombo = beatmap.HitObjects.Count(h => h is Hit),
+                WeightedObjects = weightedObjectCount
             };
         }
 
@@ -80,54 +85,44 @@ namespace osu.Game.Rulesets.Taiko.Difficulty
             }
         }
 
-        private double calculateDifficulty(List<TaikoHitObjectDifficulty> objects, double timeRate)
+        private double calculateDifficulty(List<TaikoHitObjectDifficulty> objects, double timeRate, out double weightedObjectCount)
         {
             double actualStrainStep = strain_step * timeRate;
 
-            // Find the highest strain value within each strain step
-            List<double> highestStrains = new List<double>();
-            double intervalEndTime = actualStrainStep;
-            double maximumStrain = 0; // We need to keep track of the maximum strain in the current interval
 
-            TaikoHitObjectDifficulty previousHitObject = null;
-            foreach (var hitObject in objects)
+            double difficulty = 0;
+            weightedObjectCount = 0;
+
+            if (objects.Count > 0)
             {
-                // While we are beyond the current interval push the currently available maximum to our strain list
-                while (hitObject.BaseHitObject.StartTime > intervalEndTime)
+                List<double> highestStrains = new List<double>();
+                List<TaikoHitObjectDifficulty> sortedObjects = new List<TaikoHitObjectDifficulty>(objects);
+
+                sortedObjects.Sort((a, b) => b.Strain.CompareTo(a.Strain));
+
+                double maxStrain = sortedObjects[0].Strain;
+
+                foreach (TaikoHitObjectDifficulty h in sortedObjects)
                 {
-                    highestStrains.Add(maximumStrain);
-
-                    // The maximum strain of the next interval is not zero by default! We need to take the last hitObject we encountered, take its strain and apply the decay
-                    // until the beginning of the next interval.
-                    if (previousHitObject == null)
+                    if (h.isValid)
                     {
-                        maximumStrain = 0;
+                        h.isValid = false;
+                        highestStrains.Add(h.Strain);
+                        h.InvalidateNear(strain_step);
                     }
-                    else
-                    {
-                        double decay = Math.Pow(TaikoHitObjectDifficulty.DECAY_BASE, (intervalEndTime - previousHitObject.BaseHitObject.StartTime) / 1000);
-                        maximumStrain = previousHitObject.Strain * decay;
-                    }
-
-                    // Go to the next time interval
-                    intervalEndTime += actualStrainStep;
+                    double objectWeight = Math.Pow(h.Strain / maxStrain, weighted_object_decay_scale);
+                    weightedObjectCount += Math.Min(1, objectWeight);
                 }
 
-                // Obtain maximum strain
-                maximumStrain = Math.Max(hitObject.Strain, maximumStrain);
+                double weight = 1;
 
-                previousHitObject = hitObject;
-            }
+                highestStrains.Sort((a, b) => b.CompareTo(a)); // Sort from highest to lowest strain.
 
-            // Build the weighted sum over the highest strains for each interval
-            double difficulty = 0;
-            double weight = 1;
-            highestStrains.Sort((a, b) => b.CompareTo(a)); // Sort from highest to lowest strain.
-
-            foreach (double strain in highestStrains)
-            {
-                difficulty += weight * strain;
-                weight *= decay_weight;
+                foreach (double strain in highestStrains)
+                {
+                    difficulty += weight * strain;
+                    weight *= decay_weight;
+                }
             }
 
             return difficulty;
