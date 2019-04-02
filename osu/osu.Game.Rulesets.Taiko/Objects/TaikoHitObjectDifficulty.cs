@@ -155,10 +155,9 @@ namespace osu.Game.Rulesets.Taiko.Objects
             double finalSpeed = (baseSpeed + (colorSpeedValue(timeRate, baseAdditionScale) * mono_weight)) / (1 + mono_weight);
 
 
-            Strain = finalSpeed + typeAddition + rhythmAddition;
+            Strain = finalSpeed + Math.Pow(Math.Pow(typeAddition, 1.5) + Math.Pow(rhythmAddition, 1.5), 2/3);
         }
-
-        private TypeSwitch lastTypeSwitchEven = TypeSwitch.None;
+        
         private double typeChangeAddition()
         {
             previousLengths = previousHitObject.previousLengths;
